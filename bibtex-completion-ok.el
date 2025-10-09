@@ -4,7 +4,7 @@
 ;;
 ;; Author: Taro Sato <okomestudio@gmail.com>
 ;; URL: https://github.com/okomestudio/bibtex-completion-ok
-;; Version: 0.1.1
+;; Version: 0.1.2
 ;; Keywords: convenience
 ;; Package-Requires: ((emacs "30.1"))
 ;;
@@ -357,10 +357,25 @@ Return DEFAULT (empty string if undefined) if FIELD is not present in ENTRY."
 (defun bibtex-completion-ok-names--parse (value)
   "Parse string VALUE into name list.
 The function returns a list of cons `(last-name . first-name)'."
+  (defun -parse (a)
+    (let ((ts (--map (let ((x (s-split "=" it t)))
+                       (if (eq (length x) 2)
+                           (apply #'cons x)
+                         (car x)))
+                     (s-split " *, *" a t))))
+      (pp ts)
+      (if (string= (alist-get "useprefix" ts nil nil #'equal) "true")
+          (progn
+            (list (format "%s %s"
+                          (alist-get "prefix" ts nil nil #'equal)
+                          (alist-get "family" ts nil nil #'equal))
+                  (alist-get "given" ts nil nil #'equal)))
+        (list (car ts) (cadr ts)))))
+
   (setq value (replace-regexp-in-string "[{}]" "" value))
   (cl-loop for a in (s-split " and " value t)
            if (s-index-of "," a)
-           collect (s-split " *, *" a t) into names
+           collect (-parse a) into names
            else
            ;; collect (s-split " " a t) into names
            collect (cons a nil) into names
