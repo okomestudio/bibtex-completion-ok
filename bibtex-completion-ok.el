@@ -184,6 +184,52 @@ VARIANT may be `note', `bibliography' (default), `in-text'."
             (mulex-case ('ja "")
                         (_ (concat "${location}" colon)))
             "${publisher}" comma "${year}"))))
+       ("mvbook"
+        (pcase variant
+          ('author-year (author-year))
+          ('author-in-text-year (author-in-text-year))
+          ('note
+           (concat
+            "${author-or-editor}"
+            (when (has-values-for-p entry 'editor 'author)
+              (mulex-s ", ed." '((ja . "編"))))
+            (comma)
+            (format it "${title}") (comma)
+            (s-join
+             comma
+             (-non-nil
+              (list
+               (when (has-values-for-p entry '(author editor))
+                 (mulex-case ('ja "${editor}編")
+                             (_ "ed. ${editor}")))
+               (when (has-values-for-p entry 'translator)
+                 (mulex-case ('ja "${translator}訳")
+                             (_ "trans. ${translator}")))
+               (mulex-case ('ja "第${volume}巻")
+                           (_ "vol. ${volume}")))))
+            (space)
+            (format paren
+                    (concat (mulex-case ('ja "")
+                                        (_ (concat "${location}" colon)))
+                            "${publisher}" comma "${year}"))))
+          (_
+           (concat
+            "${author-or-editor/i}" (period)
+            (format it "${title}") (comma)
+            (mulex-case ('ja "第${volume}巻")
+                        (_ "vol. ${volume}"))
+            period
+            (when (has-values-for-p entry '(author editor))
+              (concat (mulex-case ('ja "${editor}編")
+                                  (_ "Edited by ${editor}"))
+                      period))
+            (when (has-values-for-p entry 'translator)
+              (concat (mulex-case ('ja "${translator}訳")
+                                  (_ "Translated by ${translator}"))
+                      period))
+            (mulex-case ('ja "")
+                        (_ (concat "${location}" colon)))
+            "${publisher}" comma "${year}"))))
        ("incollection"
         (pcase variant
           ('author-year (author-year))
