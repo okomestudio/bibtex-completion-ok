@@ -30,31 +30,43 @@
 ;;; Code:
 
 (require 'bibtex-completion)
-(require 's)
 (require 'dash)
 (require 'mulex)
+(require 's)
+
+(defcustom bibtex-completion-value-getter
+  #'bibtex-completion-chicago-get-value
+  "")
+
+(defun bibtex-completion-when-entry (entry fields &rest body)
+  "TBD."
+  (declare (indent 2))
+  (let ((has (let ((x (plist-get fields :has)))
+               (--map (if (symbolp it) (symbol-name it) it)
+                      (if (listp x) x (list x)))))
+        (has-not (let ((x (plist-get fields :has-not)))
+                   (--map (if (symbolp it) (symbol-name it) it)
+                          (if (listp x) x (list x))))))
+    (when
+        (eval
+         `(and
+           ,@(append
+              (--map
+               (if-let* ((s (funcall bibtex-completion-value-getter it entry))
+                         (_ (not (string-empty-p s))))
+                   s)
+               has)
+              (--map
+               (null
+                (if-let* ((s (funcall bibtex-completion-value-getter it entry))
+                          (_ (not (string-empty-p s))))
+                    s))
+               has-not))))
+      (mapc #'eval body))))
 
 (defun bibtex-completion-chicago-format-reference (key &optional variant)
   "Return a plain text reference in Chicago format for KEY.
 VARIANT may be `note', `bibliography' (default), `in-text'."
-
-  (defun has-values-for-p (entry fields &optional not-fields)
-    (let ((fields (--map (if (symbolp it) (symbol-name it) it)
-                         (if (listp fields) fields (list fields))))
-          (not-fields
-           (--map (if (symbolp it) (symbol-name it) it)
-                  (if (listp not-fields) not-fields (list not-fields)))))
-      (eval
-       `(and
-         ,@(append
-            (--map (bibtex-completion-chicago-get-value it entry) fields)
-            (--map (null (bibtex-completion-chicago-get-value it entry))
-                   not-fields))))))
-
-  (defun ensure-american-style (&rest s)
-    (replace-regexp-in-string "\\([”\"']\\)\\([.,]\\)" "\\2\\1"
-                              (string-join s)))
-
   (let* ((entry (bibtex-completion-get-entry key))
          (entry-type (downcase (bibtex-completion-get-value "=type=" entry)))
          (entry-subtype
@@ -73,306 +85,346 @@ VARIANT may be `note', `bibliography' (default), `in-text'."
          (dq (mulex-s "“%s”" '((ja . "「%s」"))))
          (it (mulex-s (if (derived-mode-p 'org-mode) "/%s/" "%s")
                       '((ja . "『%s』"))))
-         s-tmpl)
-    (defun comma () (mulex-case ('ja "") (_ comma)))
-    (defun period () (mulex-case ('ja "") (_ period)))
-    (defun space () (mulex-case ('ja "") (_ space)))
-
-    (defun author-year ()
-      (concat "${author-or-editor/s}" space "${year}"))
-    (defun author-in-text-year ()
-      (concat "${author-or-editor/s}" (space) (format paren "${year}")))
-
-    (setq
-     s-tmpl
-     (pcase (s-join ":" (-non-nil (list entry-type entry-subtype)))
-       ("article:magazine"
-        (pcase variant
-          ('author-year (author-year))
-          ('author-in-text-year (author-in-text-year))
-          ('note
-           (concat
-            "${author-or-editor}" (comma)
-            (ensure-american-style (format dq "${title}") (comma))
-            (format it "${journaltitle}") (comma) "${date}"
-            (if (bibtex-completion-get-value "url" entry)
-                (concat comma "${url}")
-              (when (bibtex-completion-get-value "pages" entry)
-                (concat comma "${pages}")))))
-          (_
-           (concat "${author-or-editor/i}" (period)
-                   (ensure-american-style (format dq "${title}") (period))
-                   (format it "${journaltitle}") (comma) "${date}"
-                   (if (bibtex-completion-get-value "url" entry)
-                       (concat comma "${url}")
-                     (when (bibtex-completion-get-value "pages" entry)
-                       (concat comma "${pages}")))))))
-       ("article:newspaper"
-        (pcase variant
-          ('author-year (author-year))
-          ('author-in-text-year (author-in-text-year))
-          ('note
-           (concat "${author-or-editor}" (comma)
-                   (ensure-american-style (format dq "${title}") (comma))
-                   (format it "${journaltitle}") (comma) "${date}"
-                   (when (bibtex-completion-get-value "url" entry)
-                     (concat comma "${url}"))))
-          (_
-           (concat "${author-or-editor/i}" (period)
-                   (ensure-american-style (format dq "${title}") (period))
-                   (format it "${journaltitle}") (comma) "${date}"
-                   (if (bibtex-completion-get-value "url" entry)
-                       (concat period "${url}"))))))
-       ("article"
-        (pcase variant
-          ('author-year (author-year))
-          ('author-in-text-year (author-in-text-year))
-          ('note
-           (concat "${author}" (comma)
-                   (ensure-american-style (format dq "${title}") (comma)) (space)
-                   (format it "${journaltitle}") space
-                   "${volume}" comma "no. ${number}" (space)
-                   (format paren "${date}") colon "${pages}"
-                   (when (bibtex-completion-get-value "doi" entry)
-                     (concat comma "${doi}"))))
-          (_
-           (concat "${author/i}" (period)
-                   (ensure-american-style (format dq "${title}") (period)) (space)
-                   (format it "${journaltitle}") space
-                   "${volume}" comma "no. ${number}" (space)
-                   (format paren "${date}") colon "${pages}" period
-                   (when (bibtex-completion-get-value "doi" entry)
-                     "${doi}")))))
-       ("podcast"
-        (pcase variant
-          ('author-year (author-year))
-          ('author-in-text-year (author-in-text-year))
-          ('note
-           (concat
-            "${author-or-editor}" (comma)
-            (ensure-american-style (format dq "${title}") (comma))
-            "${date}" (comma)
-            "in " (format it "${seriestitle}") (comma)
-            (concat (space) "podcast") (comma)
-            "${url}"))
-          (_
-           (concat
-            "${author-or-editor/i}" (period)
-            (ensure-american-style (format dq "${title}") (period))
-            "${date}" (period)
-            "In " (format it "${seriestitle}") (period)
-            (concat (space) "Podcast") (period)
-            "${url}"))))
-       ("book"
-        (pcase variant
-          ('author-year (author-year))
-          ('author-in-text-year (author-in-text-year))
-          ('note
-           (concat
-            "${author-or-editor}"
-            (when (has-values-for-p entry 'editor 'author)
-              (mulex-s ", ed." '((ja . "編"))))
-            (comma)
-            (format it "${title}") (comma)
-            (s-join
-             comma
-             (-non-nil
-              (list
-               (when (has-values-for-p entry '(author editor))
-                 (mulex-case ('ja "${editor}編")
-                             (_ "ed. ${editor}")))
-               (when (has-values-for-p entry 'translator)
-                 (mulex-case ('ja "${translator}訳")
-                             (_ "trans. ${translator}"))))))
-            (space)
-            (format paren
-                    (concat (mulex-case ('ja "")
-                                        (_ (concat "${location}" colon)))
-                            "${publisher}" comma "${year}"))))
-          (_
-           (concat
-            "${author-or-editor/i}" (period)
-            (format it "${title}") (period)
-            (when (has-values-for-p entry '(author editor))
-              (concat (mulex-case ('ja "${editor}編")
-                                  (_ "Edited by ${editor}"))
-                      period))
-            (when (has-values-for-p entry 'translator)
-              (concat (mulex-case ('ja "${translator}訳")
-                                  (_ "Translated by ${translator}"))
-                      period))
-            (mulex-case ('ja "")
-                        (_ (concat "${location}" colon)))
-            "${publisher}" comma "${year}"))))
-       ("mvbook"
-        (pcase variant
-          ('author-year (author-year))
-          ('author-in-text-year (author-in-text-year))
-          ('note
-           (concat
-            "${author-or-editor}"
-            (when (has-values-for-p entry 'editor 'author)
-              (mulex-s ", ed." '((ja . "編"))))
-            (comma)
-            (format it "${title}") (comma)
-            (s-join
-             comma
-             (-non-nil
-              (list
-               (when (has-values-for-p entry '(author editor))
-                 (mulex-case ('ja "${editor}編")
-                             (_ "ed. ${editor}")))
-               (when (has-values-for-p entry 'translator)
-                 (mulex-case ('ja "${translator}訳")
-                             (_ "trans. ${translator}")))
-               (mulex-case ('ja "第${volume}巻")
-                           (_ "vol. ${volume}")))))
-            (space)
-            (format paren
-                    (concat (mulex-case ('ja "")
-                                        (_ (concat "${location}" colon)))
-                            "${publisher}" comma "${year}"))))
-          (_
-           (concat
-            "${author-or-editor/i}" (period)
-            (format it "${title}") (comma)
-            (mulex-case ('ja "第${volume}巻")
-                        (_ "vol. ${volume}"))
-            period
-            (when (has-values-for-p entry '(author editor))
-              (concat (mulex-case ('ja "${editor}編")
-                                  (_ "Edited by ${editor}"))
-                      period))
-            (when (has-values-for-p entry 'translator)
-              (concat (mulex-case ('ja "${translator}訳")
-                                  (_ "Translated by ${translator}"))
-                      period))
-            (mulex-case ('ja "")
-                        (_ (concat "${location}" colon)))
-            "${publisher}" comma "${year}"))))
-       ("incollection"
-        (pcase variant
-          ('author-year (author-year))
-          ('author-in-text-year (author-in-text-year))
-          ('note
-           (concat
-            "${author}" comma
-            (ensure-american-style (format dq "${title}") comma)
-            (mulex-case
-             ('ja (concat "${editor}編" (format it "${title}") "所収"))
-             (_ (concat "in " (format it "${title}") comma "ed. ${editor}")))
-            (space)
-            (format paren (concat "${location}" colon "${publisher}" comma
-                                  "${year}"))))
-          (_
-           (concat
-            "${author/i}" period
-            (ensure-american-style (format dq "${title}") period)
-            (mulex-case
-             ('ja (concat "${editor}編" (format it "${title}") "所収"))
-             (_ (s-join
-                 comma
-                 (-non-nil
-                  (list (concat "In " (format it "${title}"))
-                        "edited by ${editor}"
-                        (when (has-values-for-p entry 'pages) "${pages}"))))))
-            period
-            "${location}" colon "${publisher}" comma "${year}"))))
-       ("online"              ; web page item and blog item in Zotero
-        (pcase variant
-          ('author-year (author-year))
-          ('author-in-text-year (author-in-text-year))
-          ('note
-           (concat
-            "${author-or-editor}" (comma)
-            (ensure-american-style (format dq "${title}") (comma))
-            (concat (format it "${organization}")
-                    (when (has-values-for-p entry 'type)
-                      (concat (space) (format paren "${type}")))
-                    (comma))
-            (concat (if (has-values-for-p entry 'date)
-                        (mulex-s "last modified ${date}"
-                                 '((ja . "最終更新日：${date}")))
-                      (mulex-s "accessed ${urldate}"
-                               '((ja . "アクセス日：${urldate}"))))
-                    comma "${url}")))
-          (_
-           (concat
-            "${author-or-editor/i}" (period)
-            (ensure-american-style (format dq "${title}") (period))
-            (concat (format it "${organization}")
-                    (when (has-values-for-p entry 'type)
-                      (concat (space) (format paren "${type}")))
-                    (period))
-            (concat (if (has-values-for-p entry 'date)
-                        (mulex-s "last modified ${date}"
-                                 '((ja . "最終更新日：${date}")))
-                      (mulex-s "accessed ${urldate}"
-                               '((ja . "アクセス日：${urldate}"))))
-                    comma "${url}")))))
-       ("video:tvbroadcast"
-        (pcase variant
-          ('author-year (author-year))
-          ('author-in-text-year (author-in-text-year))
-          ('note
-           (concat
-            (when (has-values-for-p entry "author-or-editor")
-              "${author-or-editor}" (comma))
-            (format it "${booktitle}") (comma)
-            (ensure-american-style (format dq "${title}") (comma))
-            (mulex-case
-             ('ja (concat "${publisher}" comma "${date}放送"))
-             (_ (concat "${date}" (comma) "on ${publisher}")))
-            (when (has-values-for-p entry 'url) (concat comma "${url}"))))
-          (_
-           (concat
-            (when (has-values-for-p entry "author-or-editor/i")
-              "${author-or-editor/i}" (period))
-            (format it "${booktitle}") (period)
-            (ensure-american-style (format dq "${title}") (period))
-            (mulex-case
-             ('ja (concat "${publisher}" comma "${date}放送"))
-             (_ (concat "${date}" (comma) "on ${publisher}")))
-            (when (has-values-for-p entry 'url) (concat period "${url}"))))))
-       ("video:video"
-        (pcase variant
-          ('author-year (author-year))
-          ('author-in-text-year (author-in-text-year))
-          ('note
-           (concat
-            "${author-or-editor}" (comma)
-            (ensure-american-style (format dq "${title}") (comma))
-            (concat "${date}"
-                    (when (has-values-for-p entry 'place)
-                      (space) "in ${place}")
-                    (comma))
-            (concat "video"
-                    (when (has-values-for-p entry 'running-time)
-                      (concat (comma) "${running-time}"))
-                    (comma))
-            (when (has-values-for-p entry 'url) "${url}")))
-          (_
-           (concat
-            "${author-or-editor/i}" (period)
-            (ensure-american-style (format dq "${title}") (period))
-            (concat "${date}"
-                    (when (has-values-for-p entry 'place)
-                      (space) "In ${place}")
-                    (period))
-            (concat "Video"
-                    (when (has-values-for-p entry 'running-time)
-                      (concat (comma) "${running-time}"))
-                    (period))
-            (when (has-values-for-p entry 'url) "${url}")))))
-       ))
-
+         (s-tmpl
+          (pcase (s-join ":" (-non-nil (list entry-type entry-subtype)))
+            ("article" (bibtex-completion-chicago-format--article))
+            ("article:magazine" (bibtex-completion-chicago-format--article-magazine))
+            ("article:newspaper" (bibtex-completion-chicago-format--article-newspaper))
+            ("book" (bibtex-completion-chicago-format--book))
+            ("mvbook" (bibtex-completion-chicago-format--mvbook))
+            ("incollection" (bibtex-completion-chicago-format--incollection))
+            ("online" (bibtex-completion-chicago-format--online))
+            ("podcast" (bibtex-completion-chicago-format--podcast))
+            ("video:tvbroadcast" (bibtex-completion-chicago-format--video-tvbroadcast))
+            ("video:video" (bibtex-completion-chicago-format--video-video))
+            (_ "${title}"))))
     (string-trim
      (replace-regexp-in-string
       "[.]+" "."
       (replace-regexp-in-string
        "\s+" space
-       (s-format s-tmpl 'bibtex-completion-chicago-get-value
-                 `(,entry ,variant ,lang)))))))
+       (replace-regexp-in-string ; enforce American-style comma/period location
+        "\\([”\"']\\)\\([.,]\\)" "\\2\\1"
+        (s-format s-tmpl 'bibtex-completion-chicago-get-value
+                  `(,entry ,variant ,lang))))))))
+
+(defmacro bibtex-completion-chicago-format--pcase (&rest body)
+  "."
+  (declare (indent 1))
+  `(cl-flet ((comma () (mulex-case ('ja "") (_ comma)))
+             (period () (mulex-case ('ja "") (_ period)))
+             (space () (mulex-case ('ja "") (_ space))))
+     (pcase variant
+       ,@body)))
+
+(defmacro bibtex-completion-chicago-format--article ()
+  "Format article reference."
+  '(bibtex-completion-chicago-format--pcase variant
+     ('author-year (concat "${author-or-editor/s}" space "${year}"))
+     ('author-in-text-year (concat "${author-or-editor/s}" (space) (format paren "${year}")))
+     ('note
+      (concat "${author}" (comma)
+              (format dq "${title}") (comma) (space)
+              (format it "${journaltitle}") space
+              "${volume}" comma "no. ${number}" (space)
+              (format paren "${date}") colon "${pages}"
+              (when (bibtex-completion-get-value "doi" entry)
+                (concat comma "${doi}"))))
+     (_
+      (concat "${author/i}" (period)
+              (format dq "${title}") (period) (space)
+              (format it "${journaltitle}") space
+              "${volume}" comma "no. ${number}" (space)
+              (format paren "${date}") colon "${pages}" period
+              (when (bibtex-completion-get-value "doi" entry)
+                "${doi}")))))
+
+(defmacro bibtex-completion-chicago-format--article-magazine ()
+  '(bibtex-completion-chicago-format--pcase variant
+     ('author-year (concat "${author-or-editor/s}" space "${year}"))
+     ('author-in-text-year (concat "${author-or-editor/s}" (space) (format paren "${year}")))
+     ('note
+      (concat
+       "${author-or-editor}" (comma)
+       (format dq "${title}") (comma)
+       (format it "${journaltitle}") (comma) "${date}"
+       (if (bibtex-completion-get-value "url" entry)
+           (concat comma "${url}")
+         (when (bibtex-completion-get-value "pages" entry)
+           (concat comma "${pages}")))))
+     (_
+      (concat "${author-or-editor/i}" (period)
+              (format dq "${title}") (period)
+              (format it "${journaltitle}") (comma) "${date}"
+              (if (bibtex-completion-get-value "url" entry)
+                  (concat comma "${url}")
+                (when (bibtex-completion-get-value "pages" entry)
+                  (concat comma "${pages}")))))))
+
+(defmacro bibtex-completion-chicago-format--article-newspaper ()
+  "Format newspaper article reference."
+  '(bibtex-completion-chicago-format--pcase variant
+     ('author-year (concat "${author-or-editor/s}" space "${year}"))
+     ('author-in-text-year (concat "${author-or-editor/s}" (space) (format paren "${year}")))
+     ('note
+      (concat "${author-or-editor}" (comma)
+              (format dq "${title}") (comma)
+              (format it "${journaltitle}") (comma) "${date}"
+              (when (bibtex-completion-get-value "url" entry)
+                (concat comma "${url}"))))
+     (_
+      (concat "${author-or-editor/i}" (period)
+              (format dq "${title}") (period)
+              (format it "${journaltitle}") (comma) "${date}"
+              (if (bibtex-completion-get-value "url" entry)
+                  (concat period "${url}"))))))
+
+(defmacro bibtex-completion-chicago-format--book ()
+  "Format book reference."
+  '(bibtex-completion-chicago-format--pcase variant
+     ('author-year (concat "${author-or-editor/s}" space "${year}"))
+     ('author-in-text-year
+      (concat "${author-or-editor/s}" (space) (format paren "${year}")))
+     ('note
+      (concat
+       "${author-or-editor}"
+       (bibtex-completion-when-entry entry '(:has editor :has-not author)
+         (mulex-s ", ed." '((ja . "編"))))
+       (comma)
+       (format it "${title}") (comma)
+       (s-join
+        comma
+        (-non-nil
+         (list
+          (bibtex-completion-when-entry entry '(:has (author editor))
+            (mulex-case ('ja "${editor}編")
+                        (_ "ed. ${editor}")))
+          (bibtex-completion-when-entry entry '(:has translator)
+            (mulex-case ('ja "${translator}訳")
+                        (_ "trans. ${translator}"))))))
+       (space)
+       (format paren
+               (concat (mulex-case ('ja "")
+                                   (_ (concat "${location}" colon)))
+                       "${publisher}" comma "${year}"))))
+     (_
+      (concat
+       "${author-or-editor/i}" (period)
+       (format it "${title}") (period)
+       (bibtex-completion-when-entry entry '(:has (author editor))
+         (concat (mulex-case ('ja "${editor}編")
+                             (_ "Edited by ${editor}"))
+                 period))
+       (bibtex-completion-when-entry entry '(:has translator)
+         (concat (mulex-case ('ja "${translator}訳")
+                             (_ "Translated by ${translator}"))
+                 period))
+       (mulex-case ('ja "")
+                   (_ (concat "${location}" colon)))
+       "${publisher}" comma "${year}"))))
+
+(defmacro bibtex-completion-chicago-format--mvbook ()
+  ""
+  '(bibtex-completion-chicago-format--pcase variant
+     ('author-year (concat "${author-or-editor/s}" space "${year}"))
+     ('author-in-text-year
+      (concat "${author-or-editor/s}" (space) (format paren "${year}")))
+     ('note
+      (concat
+       "${author-or-editor}"
+       (bibtex-completion-when-entry entry '(:has editor :has-not author)
+         (mulex-s ", ed." '((ja . "編"))))
+       (comma)
+       (format it "${title}") (comma)
+       (s-join
+        comma
+        (-non-nil
+         (list
+          (bibtex-completion-when-entry entry '(:has (author editor))
+            (mulex-case ('ja "${editor}編")
+                        (_ "ed. ${editor}")))
+          (bibtex-completion-when-entry entry '(:has translator)
+            (mulex-case ('ja "${translator}訳")
+                        (_ "trans. ${translator}")))
+          (mulex-case ('ja "第${volume}巻")
+                      (_ "vol. ${volume}")))))
+       (space)
+       (format paren
+               (concat (mulex-case ('ja "")
+                                   (_ (concat "${location}" colon)))
+                       "${publisher}" comma "${year}"))))
+     (_
+      (concat
+       "${author-or-editor/i}" (period)
+       (format it "${title}") (comma)
+       (mulex-case ('ja "第${volume}巻")
+                   (_ "vol. ${volume}"))
+       period
+       (bibtex-completion-when-entry entry '(:has (author editor))
+         (concat (mulex-case ('ja "${editor}編")
+                             (_ "Edited by ${editor}"))
+                 period))
+       (bibtex-completion-when-entry entry '(:has translator)
+         (concat (mulex-case ('ja "${translator}訳")
+                             (_ "Translated by ${translator}"))
+                 period))
+       (mulex-case ('ja "")
+                   (_ (concat "${location}" colon)))
+       "${publisher}" comma "${year}"))))
+
+(defmacro bibtex-completion-chicago-format--incollection ()
+  ""
+  '(bibtex-completion-chicago-format--pcase variant
+     ('author-year (concat "${author-or-editor/s}" space "${year}"))
+     ('author-in-text-year
+      (concat "${author-or-editor/s}" (space) (format paren "${year}")))
+     ('note
+      (concat
+       "${author}" comma
+       (format dq "${title}") comma
+       (mulex-case
+        ('ja (concat "${editor}編" (format it "${title}") "所収"))
+        (_ (concat "in " (format it "${title}") comma "ed. ${editor}")))
+       (space)
+       (format paren (concat "${location}" colon "${publisher}" comma
+                             "${year}"))))
+     (_
+      (concat
+       "${author/i}" period
+       (format dq "${title}") period
+       (mulex-case
+        ('ja (concat "${editor}編" (format it "${title}") "所収"))
+        (_ (s-join
+            comma
+            (-non-nil
+             (list (concat "In " (format it "${title}"))
+                   "edited by ${editor}"
+                   (bibtex-completion-when-entry entry '(:has pages)
+                     "${pages}"))))))
+       period
+       "${location}" colon "${publisher}" comma "${year}"))))
+
+(defmacro bibtex-completion-chicago-format--online ()
+  "Fromat online reference.
+This includes web page item and blog item in Zotero."
+  '(bibtex-completion-chicago-format--pcase variant
+     ('author-year (concat "${author-or-editor/s}" space "${year}"))
+     ('author-in-text-year
+      (concat "${author-or-editor/s}" (space) (format paren "${year}")))
+     ('note
+      (concat
+       "${author-or-editor}" (comma)
+       (format dq "${title}") (comma)
+       (concat (format it "${organization}")
+               (bibtex-completion-when-entry entry '(:has type)
+                 (concat (space) (format paren "${type}")))
+               (comma))
+       (concat (or (bibtex-completion-when-entry entry '(:has date)
+                     (mulex-s "last modified ${date}"
+                              '((ja . "最終更新日：${date}"))))
+                   (mulex-s "accessed ${urldate}"
+                            '((ja . "アクセス日：${urldate}"))))
+               comma "${url}")))
+     (_
+      (concat
+       "${author-or-editor/i}" (period)
+       (format dq "${title}") (period)
+       (concat (format it "${organization}")
+               (bibtex-completion-when-entry entry '(:has type)
+                 (concat (space) (format paren "${type}")))
+               (period))
+       (concat (or (bibtex-completion-when-entry entry '(:has date)
+                     (mulex-s "last modified ${date}"
+                              '((ja . "最終更新日：${date}"))))
+                   (mulex-s "accessed ${urldate}"
+                            '((ja . "アクセス日：${urldate}"))))
+               comma "${url}")))))
+
+(defmacro bibtex-completion-chicago-format--podcast ()
+  '(bibtex-completion-chicago-format--pcase variant
+     ('author-year (concat "${author-or-editor/s}" space "${year}"))
+     ('author-in-text-year
+      (concat "${author-or-editor/s}" (space) (format paren "${year}")))
+     ('note
+      (concat
+       "${author-or-editor}" (comma)
+       (format dq "${title}") (comma)
+       "${date}" (comma)
+       "in " (format it "${seriestitle}") (comma)
+       (concat (space) "podcast") (comma)
+       "${url}"))
+     (_
+      (concat
+       "${author-or-editor/i}" (period)
+       (format dq "${title}") (period)
+       "${date}" (period)
+       "In " (format it "${seriestitle}") (period)
+       (concat (space) "Podcast") (period)
+       "${url}"))))
+
+(defmacro bibtex-completion-chicago-format--video-tvbroadcast ()
+  ""
+  '(bibtex-completion-chicago-format--pcase variant
+     ('author-year (concat "${author-or-editor/s}" space "${year}"))
+     ('author-in-text-year
+      (concat "${author-or-editor/s}" (space) (format paren "${year}")))
+     ('note
+      (concat
+       (bibtex-completion-when-entry entry '(:has author-or-editor)
+         "${author-or-editor}" (comma))
+       (format it "${booktitle}") (comma)
+       (format dq "${title}") (comma)
+       (mulex-case
+        ('ja (concat "${publisher}" comma "${date}放送"))
+        (_ (concat "${date}" (comma) "on ${publisher}")))
+       (bibtex-completion-when-entry entry '(:has url)
+         (concat comma "${url}"))))
+     (_
+      (concat
+       (bibtex-completion-when-entry entry '(:has 'author-or-editor/i)
+         "${author-or-editor/i}" (period))
+       (format it "${booktitle}") (period)
+       (format dq "${title}") (period)
+       (mulex-case
+        ('ja (concat "${publisher}" comma "${date}放送"))
+        (_ (concat "${date}" (comma) "on ${publisher}")))
+       (bibtex-completion-when-entry entry '(:has url)
+         (concat period "${url}"))))))
+
+(defmacro bibtex-completion-chicago-format--video-video ()
+  ""
+  '(bibtex-completion-chicago-format--pcase variant
+     ('author-year (concat "${author-or-editor/s}" space "${year}"))
+     ('author-in-text-year
+      (concat "${author-or-editor/s}" (space) (format paren "${year}")))
+     ('note
+      (concat
+       "${author-or-editor}" (comma)
+       (format dq "${title}") (comma)
+       (concat "${date}"
+               (bibtex-completion-when-entry entry '(:has place)
+                 (space) "in ${place}")
+               (comma))
+       (concat "video"
+               (bibtex-completion-when-entry entry '(:has running-time)
+                 (concat (comma) "${running-time}"))
+               (comma))
+       (bibtex-completion-when-entry entry '(:has url)
+         "${url}")))
+     (_
+      (concat
+       "${author-or-editor/i}" (period)
+       (format dq "${title}") (period)
+       (concat "${date}"
+               (bibtex-completion-when-entry entry '(:has place)
+                 (space) "In ${place}")
+               (period))
+       (concat "Video"
+               (bibtex-completion-when-entry entry '(:has running-time)
+                 (concat (comma) "${running-time}"))
+               (period))
+       (bibtex-completion-when-entry entry '(:has url)
+         "${url}")))))
 
 (defun bibtex-completion-chicago-get-value (field extra)
   "Return Field of ENTRY formatted following the Chicago style.
