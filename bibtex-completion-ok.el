@@ -4,7 +4,7 @@
 ;;
 ;; Author: Taro Sato <okomestudio@gmail.com>
 ;; URL: https://github.com/okomestudio/bibtex-completion-ok
-;; Version: 0.1.2
+;; Version: 0.2.1
 ;; Keywords: convenience
 ;; Package-Requires: ((emacs "30.1"))
 ;;
@@ -25,7 +25,10 @@
 ;;
 ;;; Commentary:
 ;;
+;; An extension to `bibtex-completion' for rendering references in the Chicago
+;; styles.
 ;;
+;; See The Chicago Manual of Style (17th ed.) for the guidelines.
 ;;
 ;;; Code:
 
@@ -34,12 +37,15 @@
 (require 'mulex)
 (require 's)
 
-(defcustom bibtex-completion-value-getter
-  #'bibtex-completion-chicago-get-value
-  "")
+(defcustom bibtex-completion-value-getter #'bibtex-completion-chicago-get-value
+  "The value getter for reference formatting."
+  :group 'bibtex-completion
+  :type 'function)
 
 (defun bibtex-completion-when-entry (entry fields &rest body)
-  "TBD."
+  "When ENTRY has values in FIELDS, evaluate BODY.
+FIELDS is a plist with keys `:has' and/or `:has-not' with their values holding
+associated field names as symbols."
   (declare (indent 2))
   (let ((has (let ((x (plist-get fields :has)))
                (--map (if (symbolp it) (symbol-name it) it)
@@ -66,17 +72,17 @@
 
 (defun bibtex-completion-chicago-format-reference (key &optional variant)
   "Return a plain text reference in Chicago format for KEY.
-VARIANT may be `note', `bibliography' (default), `in-text'."
+VARIANT may be `author-year', `author-in-text-year', `note', or
+`bibliography' (default)."
   (let* ((entry (bibtex-completion-get-entry key))
          (entry-type (downcase (bibtex-completion-get-value "=type=" entry)))
          (entry-subtype
           (if-let* ((s (bibtex-completion-get-value "entrysubtype" entry)))
               (downcase s)))
-         (lang (alist-get
-                (replace-regexp-in-string
-                 "\\`{\\([^}].*\\)}\\'" "\\1"
-                 (bibtex-completion-get-value "langid" entry))
-                mulex-languages nil nil #'equal))
+         (lang (alist-get (replace-regexp-in-string
+                           "\\`{\\([^}].*\\)}\\'" "\\1"
+                           (bibtex-completion-get-value "langid" entry))
+                          mulex-languages nil nil #'equal))
          (space (mulex-s " " '((ja . " "))))
          (comma (mulex-s ", " '((ja . "、"))))
          (period (mulex-s ". " '((ja . "。"))))
@@ -105,20 +111,23 @@ VARIANT may be `note', `bibliography' (default), `in-text'."
        "\s+" space
        (replace-regexp-in-string ; enforce American-style comma/period location
         "\\([”\"']\\)\\([.,]\\)" "\\2\\1"
-        (s-format s-tmpl 'bibtex-completion-chicago-get-value
-                  `(,entry ,variant ,lang))))))))
+        (s-format s-tmpl bibtex-completion-value-getter
+                  (list (cons 'entry entry)
+                        (cons 'variant variant)
+                        (cons 'lang lang)))))))))
 
-(defmacro bibtex-completion-chicago-format--pcase (&rest body)
-  "."
+(defmacro bibtex-completion-chicago-format--pcase (variant &rest cases)
+  "The wrapper for pcase of CASES given VARIANT.
+This wrapper makes a few functions available via let-bindings."
   (declare (indent 1))
   `(cl-flet ((comma () (mulex-case ('ja "") (_ comma)))
              (period () (mulex-case ('ja "") (_ period)))
              (space () (mulex-case ('ja "") (_ space))))
      (pcase variant
-       ,@body)))
+       ,@cases)))
 
 (defmacro bibtex-completion-chicago-format--article ()
-  "Format article reference."
+  "Format the article reference."
   '(bibtex-completion-chicago-format--pcase variant
      ('author-year (concat "${author-or-editor/s}" space "${year}"))
      ('author-in-text-year (concat "${author-or-editor/s}" (space) (format paren "${year}")))
@@ -140,6 +149,7 @@ VARIANT may be `note', `bibliography' (default), `in-text'."
                 "${doi}")))))
 
 (defmacro bibtex-completion-chicago-format--article-magazine ()
+  "Format the magazine article reference."
   '(bibtex-completion-chicago-format--pcase variant
      ('author-year (concat "${author-or-editor/s}" space "${year}"))
      ('author-in-text-year (concat "${author-or-editor/s}" (space) (format paren "${year}")))
@@ -162,7 +172,7 @@ VARIANT may be `note', `bibliography' (default), `in-text'."
                   (concat comma "${pages}")))))))
 
 (defmacro bibtex-completion-chicago-format--article-newspaper ()
-  "Format newspaper article reference."
+  "Format the newspaper article reference."
   '(bibtex-completion-chicago-format--pcase variant
      ('author-year (concat "${author-or-editor/s}" space "${year}"))
      ('author-in-text-year (concat "${author-or-editor/s}" (space) (format paren "${year}")))
@@ -180,7 +190,7 @@ VARIANT may be `note', `bibliography' (default), `in-text'."
                   (concat period "${url}"))))))
 
 (defmacro bibtex-completion-chicago-format--book ()
-  "Format book reference."
+  "Format the book reference."
   '(bibtex-completion-chicago-format--pcase variant
      ('author-year (concat "${author-or-editor/s}" space "${year}"))
      ('author-in-text-year
@@ -224,7 +234,7 @@ VARIANT may be `note', `bibliography' (default), `in-text'."
        "${publisher}" comma "${year}"))))
 
 (defmacro bibtex-completion-chicago-format--mvbook ()
-  ""
+  "Format the multi-volume book reference."
   '(bibtex-completion-chicago-format--pcase variant
      ('author-year (concat "${author-or-editor/s}" space "${year}"))
      ('author-in-text-year
@@ -273,7 +283,7 @@ VARIANT may be `note', `bibliography' (default), `in-text'."
        "${publisher}" comma "${year}"))))
 
 (defmacro bibtex-completion-chicago-format--incollection ()
-  ""
+  "Format the section in a title reference."
   '(bibtex-completion-chicago-format--pcase variant
      ('author-year (concat "${author-or-editor/s}" space "${year}"))
      ('author-in-text-year
@@ -305,7 +315,7 @@ VARIANT may be `note', `bibliography' (default), `in-text'."
        "${location}" colon "${publisher}" comma "${year}"))))
 
 (defmacro bibtex-completion-chicago-format--online ()
-  "Fromat online reference.
+  "Fromat the online reference.
 This includes web page item and blog item in Zotero."
   '(bibtex-completion-chicago-format--pcase variant
      ('author-year (concat "${author-or-editor/s}" space "${year}"))
@@ -341,6 +351,7 @@ This includes web page item and blog item in Zotero."
                comma "${url}")))))
 
 (defmacro bibtex-completion-chicago-format--podcast ()
+  "Format the podcast reference."
   '(bibtex-completion-chicago-format--pcase variant
      ('author-year (concat "${author-or-editor/s}" space "${year}"))
      ('author-in-text-year
@@ -363,7 +374,8 @@ This includes web page item and blog item in Zotero."
        "${url}"))))
 
 (defmacro bibtex-completion-chicago-format--video-tvbroadcast ()
-  ""
+  "Format the TV broadcast reference.
+This also fomats YouTube video, for example."
   '(bibtex-completion-chicago-format--pcase variant
      ('author-year (concat "${author-or-editor/s}" space "${year}"))
      ('author-in-text-year
@@ -392,7 +404,7 @@ This includes web page item and blog item in Zotero."
          (concat period "${url}"))))))
 
 (defmacro bibtex-completion-chicago-format--video-video ()
-  ""
+  "Format the video reference."
   '(bibtex-completion-chicago-format--pcase variant
      ('author-year (concat "${author-or-editor/s}" space "${year}"))
      ('author-in-text-year
@@ -427,47 +439,48 @@ This includes web page item and blog item in Zotero."
          "${url}")))))
 
 (defun bibtex-completion-chicago-get-value (field extra)
-  "Return Field of ENTRY formatted following the Chicago style.
-Return DEFAULT (empty string if undefined) if FIELD is not present in ENTRY."
-  (defun get-value (field entry &optional default)
-    (let ((value (bibtex-completion-get-value field entry default)))
-      (when value
-        (replace-regexp-in-string
-         "{{\\([^}]*\\)}}" "\\1"
-         (replace-regexp-in-string
-          "\\\\&" "&"
-          (replace-regexp-in-string "\\`{\\([^}].*\\)}\\'" "\\1" value))))))
-
+  "Return the FIELD value of ENTRY formatted following the Chicago style.
+EXTRA is an alist to be bound with `let-alist'. It currently expects entry,
+variant, and lang items to exist."
   (or
-   (let ((entry (nth 0 extra))
-         (variant (nth 1 extra))
-         (lang (nth 2 extra)))
-     (pcase field
-       ("author/i"
-        (bibtex-completion-chicago-format-names
-         (get-value "author" entry) lang t variant))
-       ("author-or-editor"
-        (if-let* ((value (get-value "author" entry)))
-            (bibtex-completion-chicago-format-names value lang nil variant)
-          (if-let* ((value (get-value "editor" entry)))
-              (bibtex-completion-chicago-format-names value lang nil variant))))
-       ("author-or-editor/i"
-        (if-let* ((value (get-value "author" entry)))
-            (bibtex-completion-chicago-format-names value lang t variant)
-          (if-let* ((value (get-value "editor" entry)))
-              (bibtex-completion-chicago-format-names value lang t variant))))
-       ("author-or-editor/s"
-        (if-let* ((value (get-value "author" entry)))
-            (bibtex-completion-chicago-format-names value lang t variant 'surname-only)
-          (if-let* ((value (get-value "editor" entry)))
-              (bibtex-completion-chicago-format-names value lang t variant 'surname-only))))
-       (_
-        (let ((value (get-value field entry)))
-          (if value
+   (let-alist extra
+     (cl-flet
+         ((get-value (field .entry &optional default)
+            (when-let*
+                ((value (bibtex-completion-get-value field .entry default)))
+              (replace-regexp-in-string
+               "{{\\([^}]*\\)}}" "\\1"
+               (replace-regexp-in-string
+                "\\\\&" "&"
+                (replace-regexp-in-string
+                 "\\`{\\([^}].*\\)}\\'" "\\1" value)))))
+          (format-names (value lang &optional invert-first variant surname-only)
+            (bibtex-completion-chicago-names-format
+             value lang invert-first variant surname-only)))
+       (pcase field
+         ("author/i"
+          (format-names (get-value "author" .entry) .lang t .variant))
+         ("author-or-editor"
+          (if-let* ((value (get-value "author" .entry)))
+              (format-names value .lang nil .variant)
+            (if-let* ((value (get-value "editor" .entry)))
+                (format-names value .lang nil .variant))))
+         ("author-or-editor/i"
+          (if-let* ((value (get-value "author" .entry)))
+              (format-names value .lang t .variant)
+            (if-let* ((value (get-value "editor" .entry)))
+                (format-names value .lang t .variant))))
+         ("author-or-editor/s"
+          (if-let* ((value (get-value "author" .entry)))
+              (format-names value .lang t .variant 'surname-only)
+            (if-let* ((value (get-value "editor" .entry)))
+                (format-names value .lang t .variant 'surname-only))))
+         (_
+          (if-let* ((value (get-value field .entry)))
               (pcase field
-                ("author" (bibtex-completion-chicago-format-names value lang nil variant))
-                ("editor" (bibtex-completion-chicago-format-names value lang nil variant))
-                ("translator" (bibtex-completion-chicago-format-names value lang nil variant))
+                ("author" (format-names value .lang nil .variant))
+                ("editor" (format-names value .lang nil .variant))
+                ("translator" (format-names value .lang nil .variant))
                 ("title" value)
                 ("journal" value)
                 ("booktitle" value)
@@ -481,39 +494,39 @@ Return DEFAULT (empty string if undefined) if FIELD is not present in ENTRY."
                 (_ value))
             ;; Handle common derived fields:
             (pcase field
-              ("year" (car (split-string (get-value "date" entry "") "-")))
-              ("journal" (get-value "journaltitle" entry ""))))))))
+              ("year" (car (split-string (get-value "date" .entry "") "-")))
+              ("journal" (get-value "journaltitle" .entry ""))))))))
    ""))
 
-(defun bibtex-completion-ok-names--parse (value)
-  "Parse string VALUE into name list.
-The function returns a list of cons `(last-name . first-name)'."
-  (defun -parse (a)
-    (let ((ts (--map (let ((x (s-split "=" it t)))
-                       (if (eq (length x) 2)
-                           (apply #'cons x)
-                         (car x)))
-                     (s-split " *, *" a t))))
-      (if (string= (alist-get "useprefix" ts nil nil #'equal) "true")
-          (progn
-            (list (format "%s %s"
-                          (alist-get "prefix" ts nil nil #'equal)
-                          (alist-get "family" ts nil nil #'equal))
-                  (alist-get "given" ts nil nil #'equal)))
-        (list (car ts) (cadr ts)))))
+(defun bibtex-completion-chicago-names--parse (value)
+  "Parse VALUE from a person name field in a BibTex entry.
+The function returns a list of cons `(surname . given-name)'."
+  (let* ((s (replace-regexp-in-string "[{}]" "" value)))
+    (cl-flet*
+        ((-parse (a)
+           (let ((ts (--map (let ((x (s-split "=" it t)))
+                              (if (eq (length x) 2)
+                                  (apply #'cons x)
+                                (car x)))
+                            (s-split " *, *" a t))))
+             (if (string= (alist-get "useprefix" ts nil nil #'equal) "true")
+                 (progn
+                   (list (format "%s %s"
+                                 (alist-get "prefix" ts nil nil #'equal)
+                                 (alist-get "family" ts nil nil #'equal))
+                         (alist-get "given" ts nil nil #'equal)))
+               (list (car ts) (cadr ts))))))
+      (cl-loop for a in (s-split " and " s t)
+               if (s-index-of "," a)
+               collect (-parse a) into names
+               else
+               collect (cons a nil) into names
+               finally return names))))
 
-  (setq value (replace-regexp-in-string "[{}]" "" value))
-  (cl-loop for a in (s-split " and " value t)
-           if (s-index-of "," a)
-           collect (-parse a) into names
-           else
-           ;; collect (s-split " " a t) into names
-           collect (cons a nil) into names
-           finally return names))
-
-(defun bibtex-completion-ok-names--concat (names lang etal)
-  "TBD."
-  (let* ((l (length names))
+(defun bibtex-completion-chicago-names--concat (names etal)
+  "Concatenate multiple NAMES into a string.
+ETAL is an integer threshold above which the names will be abbreviated to et al."
+  (let* ((len (length names))
          (abbrev (mulex-s "%s et al." '((ja . "%s他"))))
          (delim
           (mulex-s ", "
@@ -524,60 +537,61 @@ The function returns a list of cons `(last-name . first-name)'."
                    `((ja . ,(if (string-match-p "[\u30FB]" (s-join "" names))
                                 "／" "・"))))))
     (cond
-     ((> l etal) (format abbrev (s-join ", " (take etal names))))
-     ((= l 1) (car names))
-     ((= l 2) (s-join delim-last names))
+     ((> len etal) (format abbrev (s-join ", " (take etal names))))
+     ((= len 1) (car names))
+     ((= len 2) (s-join delim-last names))
      (t (concat (s-join delim (-butlast names))
                 (mulex-s "," '((ja . ""))) delim-last
                 (-last-item names))))))
 
-(defun bibtex-completion-ok-names--format (names lang invert-first variant surname-only)
-  "TBD."
-  (defun contains-katakana-p (s)
-    (string-match-p "[\u30A0-\u30FF]" s))
-
-  (defun flatten (n)
-    (let ((fn (cadr n)) (ln (car n)))
-      (pcase lang
-        ('ja (if (contains-katakana-p ln)
-                 (concat (and fn (concat fn "・")) ln)
-               (concat ln fn)))
-        (_ (concat (and fn (concat fn " ")) ln)))))
-
-  (defun flatten-invert (n)
-    (let ((fn (cadr n)) (ln (car n)))
-      (pcase lang
-        ('ja (if (contains-katakana-p ln)
-                 (concat ln (and fn (concat "、" fn)))
-               (concat ln fn)))
-        (_ (concat ln (and fn (concat ", " fn)))))))
-
-  (defun surname (n)
-    (car n))
-
-  (let* ((l (length names))
-         (names (append
-                 (list (let ((n (car names)))
-                         (if surname-only (surname n)
-                           (if invert-first (flatten-invert n) (flatten n)))))
-                 (--map (if surname-only (surname it) (flatten it))
-                        (nthcdr 1 names)))))
-    (cond
-     ((and (member variant '(note author-year author-in-text-year))
-           (> l 3))
-      (bibtex-completion-ok-names--concat names lang 1))
-     ((< l 11) (bibtex-completion-ok-names--concat names lang 10))
-     (t (bibtex-completion-ok-names--concat names lang 7)))))
-
-(defun bibtex-completion-chicago-format-names
+(defun bibtex-completion-chicago-names-format
     (value lang &optional invert-first variant surname-only)
-  "Format author list in VALUE in Chicago style, in language LANG."
-  (let ((authors (bibtex-completion-ok-names--parse value)))
-    (bibtex-completion-ok-names--format authors lang invert-first variant surname-only)))
+  "Format names in VALUE in the Chicago style.
+LANG is the language used to interpret the value, not necessarily the current
+language used for rendering formatted reference.
+
+When non-nil, INVERT-FIRST inverts the given-surname order of first entry.
+
+VARIANT will be passed to the underlying functions to control name rendering.
+
+When SURNAME-ONLY is non-nil, only surnames will be used."
+  (cl-flet*
+      ((contains-katakana-p (s) (string-match-p "[\u30A0-\u30FF]" s))
+       (surname (n) (car n))
+       (flatten (n)
+         (let ((fn (cadr n)) (ln (car n)))
+           (pcase lang
+             ('ja (if (contains-katakana-p ln)
+                      (concat (and fn (concat fn "・")) ln)
+                    (concat ln fn)))
+             (_ (concat (and fn (concat fn " ")) ln)))))
+       (flatten-invert (n)
+         (let ((fn (cadr n)) (ln (car n)))
+           (pcase lang
+             ('ja (if (contains-katakana-p ln)
+                      (concat ln (and fn (concat "、" fn)))
+                    (concat ln fn)))
+             (_ (concat ln (and fn (concat ", " fn))))))))
+    (when-let*
+        ((names (bibtex-completion-chicago-names--parse value))
+         (len (length names))
+         (names
+          (append
+           (list (let ((n (car names)))
+                   (if surname-only (surname n)
+                     (if invert-first (flatten-invert n) (flatten n)))))
+           (--map (if surname-only (surname it) (flatten it))
+                  (nthcdr 1 names)))))
+      (cond
+       ((and (member variant '(note author-year author-in-text-year))
+             (> len 3))
+        (bibtex-completion-chicago-names--concat names 1))
+       ((< len 11) (bibtex-completion-chicago-names--concat names 10))
+       (t (bibtex-completion-chicago-names--concat names 7))))))
 
 ;;;###autoload
 (defun bibtex-completion-ok-insert-org-ref-link (&optional _arg)
-  "Insert or update a cite link with a reference description.
+  "Insert or update the reference description of a cite link.
 When the point is on an existing link, the citekey is used to get the reference
 key. Otherwise, the command will prompt for a key.
 
@@ -586,31 +600,30 @@ the user request. Otherwise, a new link will be created.
 
 Use the prefix argument to choose the style for description:
 
-  - 1: 'Authors (Year)'
-  - 2: 'Authors Year'
+  - 0: Chicago Bibliography
+  - 1: 'Authors Year'
+  - 2: 'Authors (Year)'
   - 3: APA
-  - 4: Trigger prompt for interactive selection
+  - 4: Prompt user for interactive selection
 
-The default style is 'Authors _Title_ (Publisher, Year)'."
+The default is the Chicago Note style."
   (interactive "P")
   (when (not (featurep 'org-ref))
     (warn "`org-ref' is not available."))
-
-  (let* ((style
+  (let* ((collection '(("APA" . apa)
+                       ("Chicago Note" . note)
+                       ("Chicago Bibliography" . bibliography)
+                       ("'Author Year'" . author-year)
+                       ("'Author (Year)'" . author-in-text-year)))
+         (style
           (pcase (if (listp _arg) (car _arg) _arg)
             ('0 'bibliography)
             ('1 'author-year)
             ('2 'author-in-text-year)
             ('3 'apa)
-            ('4 (let ((collection
-                       '(("APA" . apa)
-                         ("Chicago Note" . note)
-                         ("Chicago Bibliography" . bibliography)
-                         ("Authors Year" . author-year)
-                         ("Authors (Year)" . author-in-text-year))))
-                  (alist-get
-                   (completing-read "Reference style: " collection nil t)
-                   collection nil nil #'equal)))
+            ('4 (alist-get (completing-read "Reference style: "
+                                            collection nil t)
+                           collection nil nil #'equal))
             (_ 'note)))
          (range nil)
          (key
@@ -624,17 +637,21 @@ The default style is 'Authors _Title_ (Publisher, Year)'."
               (progn
                 (setq range (list start end))
                 key)
-            (org-ref-read-key)))
-         (formatted
-          (pcase style
-            ('apa (bibtex-completion-apa-format-reference key))
-            (_ (bibtex-completion-chicago-format-reference key style)))))
+            (org-ref-read-key))))
     ;; Delete the existing link before replacement.
     (when-let* ((start (car range)) (end (cadr range)))
       (delete-region start end)
       (goto-char start))
 
-    (insert (format "[[cite:&%s][%s]]" key formatted))))
+    (insert
+     (format "[[cite:&%s][%s]]" key
+             (pcase style
+               ('apa (bibtex-completion-apa-format-reference key))
+               (_ (bibtex-completion-chicago-format-reference key style)))))))
 
 (provide 'bibtex-completion-ok)
+
+;; Local Variables:
+;; nameless-aliases: (("c" . "bibtex-completion-chicago"))
+;; End:
 ;;; bibtex-completion-ok.el ends here
