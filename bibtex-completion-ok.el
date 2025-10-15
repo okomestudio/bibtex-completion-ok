@@ -6,7 +6,7 @@
 ;; URL: https://github.com/okomestudio/bibtex-completion-ok
 ;; Version: 0.2.1
 ;; Keywords: convenience
-;; Package-Requires: ((emacs "30.1"))
+;; Package-Requires: ((emacs "30.1") (bibtex-completion "1.0.0") (dash "2.20.0") (mulex "0.1.3") (s "1.13.1"))
 ;;
 ;;; License:
 ;;
