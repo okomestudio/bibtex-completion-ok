@@ -4,7 +4,7 @@
 ;;
 ;; Author: Taro Sato <okomestudio@gmail.com>
 ;; URL: https://github.com/okomestudio/bibtex-completion-ok
-;; Version: 0.2.1
+;; Version: 0.2.2
 ;; Keywords: convenience
 ;; Package-Requires: ((emacs "30.1") (bibtex-completion "1.0.0") (dash "2.20.0") (mulex "0.1.3") (s "1.13.1"))
 ;;
@@ -47,74 +47,32 @@
 FIELDS is a plist with keys `:has' and/or `:has-not' with their values holding
 associated field names as symbols."
   (declare (indent 2))
-  (let ((has (let ((x (plist-get fields :has)))
-               (--map (if (symbolp it) (symbol-name it) it)
-                      (if (listp x) x (list x)))))
-        (has-not (let ((x (plist-get fields :has-not)))
-                   (--map (if (symbolp it) (symbol-name it) it)
-                          (if (listp x) x (list x))))))
-    (when
-        (eval
-         `(and
-           ,@(append
-              (--map
+  (let* ((has (let ((x (plist-get fields :has)))
+                (--map (if (symbolp it) (symbol-name it) it)
+                       (if (listp x) x (list x)))))
+         (has-not (let ((x (plist-get fields :has-not)))
+                    (--map (if (symbolp it) (symbol-name it) it)
+                           (if (listp x) x (list x)))))
+         result)
+    (when has
+      (setq result
+            (--map
+             (if-let* ((s (funcall bibtex-completion-value-getter it entry))
+                       (_ (not (string-empty-p s))))
+                 s)
+             has)))
+    (when has-not
+      (setq result
+            (append
+             result
+             (--map
+              (null
                (if-let* ((s (funcall bibtex-completion-value-getter it entry))
                          (_ (not (string-empty-p s))))
-                   s)
-               has)
-              (--map
-               (null
-                (if-let* ((s (funcall bibtex-completion-value-getter it entry))
-                          (_ (not (string-empty-p s))))
-                    s))
-               has-not))))
-      (mapc #'eval body))))
-
-(defun bibtex-completion-chicago-format-reference (key &optional variant)
-  "Return a plain text reference in Chicago format for KEY.
-VARIANT may be `author-year', `author-in-text-year', `note', or
-`bibliography' (default)."
-  (let* ((entry (bibtex-completion-get-entry key))
-         (entry-type (downcase (bibtex-completion-get-value "=type=" entry)))
-         (entry-subtype
-          (if-let* ((s (bibtex-completion-get-value "entrysubtype" entry)))
-              (downcase s)))
-         (lang (alist-get (replace-regexp-in-string
-                           "\\`{\\([^}].*\\)}\\'" "\\1"
-                           (bibtex-completion-get-value "langid" entry))
-                          mulex-languages nil nil #'equal))
-         (space (mulex-s " " '((ja . " "))))
-         (comma (mulex-s ", " '((ja . "、"))))
-         (period (mulex-s ". " '((ja . "。"))))
-         (colon (mulex-s ": " '((ja . "："))))
-         (paren (mulex-s "(%s)" '((ja . "（%s）"))))
-         (dq (mulex-s "“%s”" '((ja . "「%s」"))))
-         (it (mulex-s (if (derived-mode-p 'org-mode) "/%s/" "%s")
-                      '((ja . "『%s』"))))
-         (s-tmpl
-          (pcase (s-join ":" (-non-nil (list entry-type entry-subtype)))
-            ("article" (bibtex-completion-chicago-format--article))
-            ("article:magazine" (bibtex-completion-chicago-format--article-magazine))
-            ("article:newspaper" (bibtex-completion-chicago-format--article-newspaper))
-            ("book" (bibtex-completion-chicago-format--book))
-            ("mvbook" (bibtex-completion-chicago-format--mvbook))
-            ("incollection" (bibtex-completion-chicago-format--incollection))
-            ("online" (bibtex-completion-chicago-format--online))
-            ("podcast" (bibtex-completion-chicago-format--podcast))
-            ("video:tvbroadcast" (bibtex-completion-chicago-format--video-tvbroadcast))
-            ("video:video" (bibtex-completion-chicago-format--video-video))
-            (_ "${title}"))))
-    (string-trim
-     (replace-regexp-in-string
-      "[.]+" "."
-      (replace-regexp-in-string
-       "\s+" space
-       (replace-regexp-in-string ; enforce American-style comma/period location
-        "\\([”\"']\\)\\([.,]\\)" "\\2\\1"
-        (s-format s-tmpl bibtex-completion-value-getter
-                  (list (cons 'entry entry)
-                        (cons 'variant variant)
-                        (cons 'lang lang)))))))))
+                   s))
+              has-not))))
+    (when (and result (eval `(and ,@result)))
+      (car (last (mapc #'eval body))))))
 
 (defmacro bibtex-completion-chicago-format--pcase (variant &rest cases)
   "The wrapper for pcase of CASES given VARIANT.
@@ -438,14 +396,65 @@ This also fomats YouTube video, for example."
        (bibtex-completion-when-entry entry '(:has url)
          "${url}")))))
 
-(defun bibtex-completion-chicago-get-value (field extra)
-  "Return the FIELD value of ENTRY formatted following the Chicago style.
-EXTRA is an alist to be bound with `let-alist'. It currently expects entry,
-variant, and lang items to exist."
+(defun bibtex-completion-chicago-format-reference (key &optional variant)
+  "Return a plain text reference in Chicago format for KEY.
+VARIANT may be `author-year', `author-in-text-year', `note', or
+`bibliography' (default)."
+  (let* ((entry (bibtex-completion-get-entry key))
+         (entry-type (downcase (bibtex-completion-get-value "=type=" entry)))
+         (entry-subtype
+          (if-let* ((s (bibtex-completion-get-value "entrysubtype" entry)))
+              (downcase s)))
+         (lang (alist-get (replace-regexp-in-string
+                           "\\`{\\([^}].*\\)}\\'" "\\1"
+                           (bibtex-completion-get-value "langid" entry))
+                          mulex-languages nil nil #'equal))
+         (space (mulex-s " " '((ja . " "))))
+         (comma (mulex-s ", " '((ja . "、"))))
+         (period (mulex-s ". " '((ja . "。"))))
+         (colon (mulex-s ": " '((ja . "："))))
+         (paren (mulex-s "(%s)" '((ja . "（%s）"))))
+         (dq (mulex-s "“%s”" '((ja . "「%s」"))))
+         (it (mulex-s (if (derived-mode-p 'org-mode) "/%s/" "%s")
+                      '((ja . "『%s』"))))
+         (s-tmpl
+          (pcase (s-join ":" (-non-nil (list entry-type entry-subtype)))
+            ("article" (bibtex-completion-chicago-format--article))
+            ("article:magazine" (bibtex-completion-chicago-format--article-magazine))
+            ("article:newspaper" (bibtex-completion-chicago-format--article-newspaper))
+            ("book" (bibtex-completion-chicago-format--book))
+            ("mvbook" (bibtex-completion-chicago-format--mvbook))
+            ("incollection" (bibtex-completion-chicago-format--incollection))
+            ("online" (bibtex-completion-chicago-format--online))
+            ("podcast" (bibtex-completion-chicago-format--podcast))
+            ("video:tvbroadcast" (bibtex-completion-chicago-format--video-tvbroadcast))
+            ("video:video" (bibtex-completion-chicago-format--video-video))
+            (_ "${title}"))))
+    (string-trim
+     (replace-regexp-in-string
+      "[.]+" "."
+      (replace-regexp-in-string
+       "\s+" space
+       (replace-regexp-in-string ; enforce American-style comma/period location
+        "\\([”\"']\\)\\([.,]\\)" "\\2\\1"
+        (s-format s-tmpl
+                  (lambda (field extra)
+                    (let-alist extra
+                      (funcall bibtex-completion-value-getter
+                               field .entry nil .variant .lang)))
+                  (list (cons 'entry entry)
+                        (cons 'variant variant)
+                        (cons 'lang lang)))))))))
+
+(defun bibtex-completion-chicago-get-value (field entry &optional default variant lang)
+  "Return the FIELD value from ENTRY formatted following the Chicago style.
+If the field value is nil, DEFAULT or an empty string (if DEFAULT is nil) is
+returned. VARIANT and LANG are passed to the formatter function."
   (or
-   (let-alist extra
+   (let-alist
+       (list (cons 'entry entry) (cons 'variant variant) (cons 'lang lang))
      (cl-flet
-         ((get-value (field .entry &optional default)
+         ((get-value (field &optional default)
             (when-let*
                 ((value (bibtex-completion-get-value field .entry default)))
               (replace-regexp-in-string
@@ -459,24 +468,24 @@ variant, and lang items to exist."
              value lang invert-first variant surname-only)))
        (pcase field
          ("author/i"
-          (format-names (get-value "author" .entry) .lang t .variant))
+          (format-names (get-value "author") .lang t .variant))
          ("author-or-editor"
-          (if-let* ((value (get-value "author" .entry)))
+          (if-let* ((value (get-value "author")))
               (format-names value .lang nil .variant)
-            (if-let* ((value (get-value "editor" .entry)))
+            (if-let* ((value (get-value "editor")))
                 (format-names value .lang nil .variant))))
          ("author-or-editor/i"
-          (if-let* ((value (get-value "author" .entry)))
+          (if-let* ((value (get-value "author")))
               (format-names value .lang t .variant)
-            (if-let* ((value (get-value "editor" .entry)))
+            (if-let* ((value (get-value "editor")))
                 (format-names value .lang t .variant))))
          ("author-or-editor/s"
-          (if-let* ((value (get-value "author" .entry)))
+          (if-let* ((value (get-value "author")))
               (format-names value .lang t .variant 'surname-only)
-            (if-let* ((value (get-value "editor" .entry)))
+            (if-let* ((value (get-value "editor")))
                 (format-names value .lang t .variant 'surname-only))))
          (_
-          (if-let* ((value (get-value field .entry)))
+          (if-let* ((value (get-value field)))
               (pcase field
                 ("author" (format-names value .lang nil .variant))
                 ("editor" (format-names value .lang nil .variant))
@@ -494,8 +503,9 @@ variant, and lang items to exist."
                 (_ value))
             ;; Handle common derived fields:
             (pcase field
-              ("year" (car (split-string (get-value "date" .entry "") "-")))
-              ("journal" (get-value "journaltitle" .entry ""))))))))
+              ("year" (car (split-string (get-value "date" "") "-")))
+              ("journal" (get-value "journaltitle" ""))))))))
+   default
    ""))
 
 (defun bibtex-completion-chicago-names--parse (value)
