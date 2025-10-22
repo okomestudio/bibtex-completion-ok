@@ -4,7 +4,7 @@
 ;;
 ;; Author: Taro Sato <okomestudio@gmail.com>
 ;; URL: https://github.com/okomestudio/bibtex-completion-ok
-;; Version: 0.2.2
+;; Version: 0.2.3
 ;; Keywords: convenience
 ;; Package-Requires: ((emacs "30.1") (bibtex-completion "1.0.0") (dash "2.20.0") (mulex "0.1.3") (s "1.13.1"))
 ;;
@@ -342,7 +342,8 @@ This also fomats YouTube video, for example."
       (concat
        (bibtex-completion-when-entry entry '(:has author-or-editor)
          "${author-or-editor}" (comma))
-       (format it "${booktitle}") (comma)
+       (bibtex-completion-when-entry entry '(:has booktitle)
+         (format it "${booktitle}") (comma))
        (format dq "${title}") (comma)
        (mulex-case
         ('ja (concat "${publisher}" comma "${date}放送"))
@@ -353,7 +354,8 @@ This also fomats YouTube video, for example."
       (concat
        (bibtex-completion-when-entry entry '(:has 'author-or-editor/i)
          "${author-or-editor/i}" (period))
-       (format it "${booktitle}") (period)
+       (bibtex-completion-when-entry entry '(:has booktitle)
+         (format it "${booktitle}") (period))
        (format dq "${title}") (period)
        (mulex-case
         ('ja (concat "${publisher}" comma "${date}放送"))
