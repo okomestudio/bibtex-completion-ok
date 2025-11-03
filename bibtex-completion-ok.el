@@ -4,7 +4,7 @@
 ;;
 ;; Author: Taro Sato <okomestudio@gmail.com>
 ;; URL: https://github.com/okomestudio/bibtex-completion-ok
-;; Version: 0.2.3
+;; Version: 0.2.4
 ;; Keywords: convenience
 ;; Package-Requires: ((emacs "30.1") (bibtex-completion "1.0.0") (dash "2.20.0") (mulex "0.1.3") (s "1.13.1"))
 ;;
@@ -420,18 +420,20 @@ VARIANT may be `author-year', `author-in-text-year', `note', or
          (it (mulex-s (if (derived-mode-p 'org-mode) "/%s/" "%s")
                       '((ja . "『%s』"))))
          (s-tmpl
-          (pcase (s-join ":" (-non-nil (list entry-type entry-subtype)))
-            ("article" (bibtex-completion-chicago-format--article))
-            ("article:magazine" (bibtex-completion-chicago-format--article-magazine))
-            ("article:newspaper" (bibtex-completion-chicago-format--article-newspaper))
-            ("book" (bibtex-completion-chicago-format--book))
-            ("mvbook" (bibtex-completion-chicago-format--mvbook))
-            ("incollection" (bibtex-completion-chicago-format--incollection))
-            ("online" (bibtex-completion-chicago-format--online))
-            ("podcast" (bibtex-completion-chicago-format--podcast))
-            ("video:tvbroadcast" (bibtex-completion-chicago-format--video-tvbroadcast))
-            ("video:video" (bibtex-completion-chicago-format--video-video))
-            (_ "${title}"))))
+          (pcase variant
+            ('title-only "${title}")
+            (_ (pcase (s-join ":" (-non-nil (list entry-type entry-subtype)))
+                 ("article" (bibtex-completion-chicago-format--article))
+                 ("article:magazine" (bibtex-completion-chicago-format--article-magazine))
+                 ("article:newspaper" (bibtex-completion-chicago-format--article-newspaper))
+                 ("book" (bibtex-completion-chicago-format--book))
+                 ("mvbook" (bibtex-completion-chicago-format--mvbook))
+                 ("incollection" (bibtex-completion-chicago-format--incollection))
+                 ("online" (bibtex-completion-chicago-format--online))
+                 ("podcast" (bibtex-completion-chicago-format--podcast))
+                 ("video:tvbroadcast" (bibtex-completion-chicago-format--video-tvbroadcast))
+                 ("video:video" (bibtex-completion-chicago-format--video-video))
+                 (_ "${title}"))))))
     (string-trim
      (replace-regexp-in-string
       "[.]+" "."
@@ -617,6 +619,7 @@ Use the prefix argument to choose the style for description:
   - 2: 'Authors (Year)'
   - 3: APA
   - 4: Prompt user for interactive selection
+  - 5: 'Title'
 
 The default is the Chicago Note style."
   (interactive "P")
@@ -626,7 +629,8 @@ The default is the Chicago Note style."
                        ("Chicago Note" . note)
                        ("Chicago Bibliography" . bibliography)
                        ("'Author Year'" . author-year)
-                       ("'Author (Year)'" . author-in-text-year)))
+                       ("'Author (Year)'" . author-in-text-year)
+                       ("'Title'" . title-only)))
          (style
           (pcase (if (listp _arg) (car _arg) _arg)
             ('0 'bibliography)
@@ -636,6 +640,7 @@ The default is the Chicago Note style."
             ('4 (alist-get (completing-read "Reference style: "
                                             collection nil t)
                            collection nil nil #'equal))
+            ('5 'title-only)
             (_ 'note)))
          (range nil)
          (key
