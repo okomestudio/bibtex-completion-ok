@@ -4,7 +4,7 @@
 ;;
 ;; Author: Taro Sato <okomestudio@gmail.com>
 ;; URL: https://github.com/okomestudio/bibtex-completion-ok
-;; Version: 0.2.4
+;; Version: 0.2.5
 ;; Keywords: convenience
 ;; Package-Requires: ((emacs "30.1") (bibtex-completion "1.0.0") (dash "2.20.0") (mulex "0.1.3") (s "1.13.1"))
 ;;
@@ -398,6 +398,9 @@ This also fomats YouTube video, for example."
        (bibtex-completion-when-entry entry '(:has url)
          "${url}")))))
 
+(defcustom bibtex-completion-chicago-lang-default "en"
+  "Default language (langid).")
+
 (defun bibtex-completion-chicago-format-reference (key &optional variant)
   "Return a plain text reference in Chicago format for KEY.
 VARIANT may be `author-year', `author-in-text-year', `note', or
@@ -409,7 +412,8 @@ VARIANT may be `author-year', `author-in-text-year', `note', or
               (downcase s)))
          (lang (alist-get (replace-regexp-in-string
                            "\\`{\\([^}].*\\)}\\'" "\\1"
-                           (bibtex-completion-get-value "langid" entry))
+                           (bibtex-completion-get-value
+                            "langid" entry bibtex-completion-chicago-lang-default))
                           mulex-languages nil nil #'equal))
          (space (mulex-s " " '((ja . " "))))
          (comma (mulex-s ", " '((ja . "、"))))
