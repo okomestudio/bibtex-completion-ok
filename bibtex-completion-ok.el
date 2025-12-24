@@ -4,7 +4,7 @@
 ;;
 ;; Author: Taro Sato <okomestudio@gmail.com>
 ;; URL: https://github.com/okomestudio/bibtex-completion-ok
-;; Version: 0.2.5
+;; Version: 0.2.6
 ;; Keywords: convenience
 ;; Package-Requires: ((emacs "30.1") (bibtex-completion "1.0.0") (dash "2.20.0") (mulex "0.1.3") (s "1.13.1"))
 ;;
@@ -516,23 +516,27 @@ returned. VARIANT and LANG are passed to the formatter function."
    default
    ""))
 
-(defun bibtex-completion-chicago-names--parse (value)
+(defun bibtex-completion-chicago-names--parse (value &optional useprefix)
   "Parse VALUE from a person name field in a BibTex entry.
-The function returns a list of cons `(surname . given-name)'."
+The function returns a list of cons `(surname . given-name)'.
+USEPREFIX is a symbol (either `true' or `false')."
   (let* ((s (replace-regexp-in-string "[{}]" "" value)))
     (cl-flet*
         ((-parse (a)
-           (let ((ts (--map (let ((x (s-split "=" it t)))
-                              (if (eq (length x) 2)
-                                  (apply #'cons x)
-                                (car x)))
-                            (s-split " *, *" a t))))
-             (if (string= (alist-get "useprefix" ts nil nil #'equal) "true")
-                 (progn
-                   (list (format "%s %s"
-                                 (alist-get "prefix" ts nil nil #'equal)
-                                 (alist-get "family" ts nil nil #'equal))
-                         (alist-get "given" ts nil nil #'equal)))
+           (let* ((ts (--map (let ((x (s-split "=" it t)))
+                               (if (eq (length x) 2)
+                                   (apply #'cons x)
+                                 (car x)))
+                             (s-split " *, *" a t)))
+                  (up (alist-get "useprefix" ts nil nil #'equal)))
+             (if (and up
+                      (or (eq useprefix 'true)
+                          (and (not (eq useprefix 'false))
+                               (string= up "true"))))
+                 (list (format "%s %s"
+                               (alist-get "prefix" ts nil nil #'equal)
+                               (alist-get "family" ts nil nil #'equal))
+                       (alist-get "given" ts nil nil #'equal))
                (list (car ts) (cadr ts))))))
       (cl-loop for a in (s-split " and " s t)
                if (s-index-of "," a)
@@ -591,7 +595,7 @@ When SURNAME-ONLY is non-nil, only surnames will be used."
                     (concat ln fn)))
              (_ (concat ln (and fn (concat ", " fn))))))))
     (when-let*
-        ((names (bibtex-completion-chicago-names--parse value))
+        ((names (bibtex-completion-chicago-names--parse value 'true))
          (len (length names))
          (names
           (append
