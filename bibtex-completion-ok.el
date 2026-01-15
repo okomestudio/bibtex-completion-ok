@@ -4,7 +4,7 @@
 ;;
 ;; Author: Taro Sato <okomestudio@gmail.com>
 ;; URL: https://github.com/okomestudio/bibtex-completion-ok
-;; Version: 0.2.6
+;; Version: 0.2.7
 ;; Keywords: convenience
 ;; Package-Requires: ((emacs "30.1") (bibtex-completion "1.0.0") (dash "2.20.0") (mulex "0.1.3") (s "1.13.1"))
 ;;
@@ -177,7 +177,10 @@ This wrapper makes a few functions available via let-bindings."
                        "${publisher}" comma "${year}"))))
      (_
       (concat
-       "${author-or-editor/i}" (period)
+       "${author-or-editor/i}"
+       (bibtex-completion-when-entry entry '(:has editor :has-not author)
+         (mulex-s ", ed." '((ja . "編"))))
+       (period)
        (format it "${title}") (period)
        (bibtex-completion-when-entry entry '(:has (author editor))
          (concat (mulex-case ('ja "${editor}編")
