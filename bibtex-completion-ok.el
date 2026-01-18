@@ -4,7 +4,7 @@
 ;;
 ;; Author: Taro Sato <okomestudio@gmail.com>
 ;; URL: https://github.com/okomestudio/bibtex-completion-ok
-;; Version: 0.2.7
+;; Version: 0.3.1
 ;; Keywords: convenience
 ;; Package-Requires: ((emacs "30.1") (bibtex-completion "1.0.0") (dash "2.20.0") (mulex "0.1.3") (s "1.13.1"))
 ;;
@@ -625,26 +625,26 @@ the user request. Otherwise, a new link will be created.
 
 Use the prefix argument to choose the style for description:
 
-  - 0: Chicago Bibliography
+  - 0: Chicago Note
   - 1: 'Authors Year'
   - 2: 'Authors (Year)'
   - 3: APA
   - 4: Prompt user for interactive selection
   - 5: 'Title'
 
-The default is the Chicago Note style."
+The default is the Chicago Bibliography style."
   (interactive "P")
   (when (not (featurep 'org-ref))
     (warn "`org-ref' is not available."))
-  (let* ((collection '(("APA" . apa)
-                       ("Chicago Note" . note)
-                       ("Chicago Bibliography" . bibliography)
+  (let* ((collection '(("'Author (Year)'" . author-in-text-year)
                        ("'Author Year'" . author-year)
-                       ("'Author (Year)'" . author-in-text-year)
-                       ("'Title'" . title-only)))
+                       ("'Title'" . title-only)
+                       ("APA" . apa)
+                       ("Chicago Bibliography" . bibliography)
+                       ("Chicago Note" . note)))
          (style
           (pcase (if (listp _arg) (car _arg) _arg)
-            ('0 'bibliography)
+            ('0 'note)
             ('1 'author-year)
             ('2 'author-in-text-year)
             ('3 'apa)
@@ -652,7 +652,7 @@ The default is the Chicago Note style."
                                             collection nil t)
                            collection nil nil #'equal))
             ('5 'title-only)
-            (_ 'note)))
+            (_ 'bibliography)))
          (range nil)
          (key
           (if-let*
