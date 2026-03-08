@@ -1,10 +1,10 @@
 ;;; bibtex-completion-ok.el --- bibtex-completion-ok  -*- lexical-binding: t -*-
 ;;
-;; Copyright (C) 2025 Taro Sato
+;; Copyright (C) 2025-2026 Taro Sato
 ;;
 ;; Author: Taro Sato <okomestudio@gmail.com>
 ;; URL: https://github.com/okomestudio/bibtex-completion-ok
-;; Version: 0.3.1
+;; Version: 0.3.2
 ;; Keywords: convenience
 ;; Package-Requires: ((emacs "30.1") (bibtex-completion "1.0.0") (dash "2.20.0") (mulex "0.1.3") (s "1.13.1"))
 ;;
@@ -636,46 +636,58 @@ The default is the Chicago Bibliography style."
   (interactive "P")
   (when (not (featurep 'org-ref))
     (warn "`org-ref' is not available."))
-  (let* ((collection '(("'Author (Year)'" . author-in-text-year)
-                       ("'Author Year'" . author-year)
-                       ("'Title'" . title-only)
-                       ("APA" . apa)
-                       ("Chicago Bibliography" . bibliography)
-                       ("Chicago Note" . note)))
-         (style
-          (pcase (if (listp _arg) (car _arg) _arg)
-            ('0 'note)
-            ('1 'author-year)
-            ('2 'author-in-text-year)
-            ('3 'apa)
-            ('4 (alist-get (completing-read "Reference style: "
-                                            collection nil t)
-                           collection nil nil #'equal))
-            ('5 'title-only)
-            (_ 'bibliography)))
-         (range nil)
-         (key
-          (if-let*
-              ((link (and (org-in-regexp org-link-any-re)
-                          (substring-no-properties (match-string 0))))
-               (start (match-beginning 0))
-               (end (match-end 0))
-               (key (and (string-match "^\\[\\[cite:&\\([^]]*\\)\\].*" link)
-                         (match-string 1 link))))
-              (progn
-                (setq range (list start end))
-                key)
-            (org-ref-read-key))))
-    ;; Delete the existing link before replacement.
-    (when-let* ((start (car range)) (end (cadr range)))
-      (delete-region start end)
-      (goto-char start))
+  (unwind-protect
+      (atomic-change-group
+        (let* (region-text
+               beg end
+               (_ (when (region-active-p)
+                    (setq beg (set-marker (make-marker)
+                                          (region-beginning)))
+                    (setq end (set-marker (make-marker)
+                                          (region-end)))
+                    (setq region-text (org-link-display-format
+                                       (buffer-substring-no-properties
+                                        beg end)))))
+               (collection '(("'Author (Year)'" . author-in-text-year)
+                             ("'Author Year'" . author-year)
+                             ("'Title'" . title-only)
+                             ("APA" . apa)
+                             ("Chicago Bibliography" . bibliography)
+                             ("Chicago Note" . note)))
+               (style
+                (pcase (if (listp _arg) (car _arg) _arg)
+                  ('0 'note)
+                  ('1 'author-year)
+                  ('2 'author-in-text-year)
+                  ('3 'apa)
+                  ('4 (alist-get (completing-read "Reference style: "
+                                                  collection nil t)
+                                 collection nil nil #'equal))
+                  ('5 'title-only)
+                  (_ 'bibliography)))
+               (key
+                (if-let*
+                    ((link (and (org-in-regexp org-link-any-re)
+                                (substring-no-properties (match-string 0))))
+                     (beg (match-beginning 0))
+                     (end (match-end 0))
+                     (key (and (string-match "^\\[\\[cite:&\\([^]]*\\)\\].*"
+                                             link)
+                               (match-string 1 link))))
+                    key
+                  (org-ref-read-key))))
+          ;; Delete the insert region before replacement.
+          (when (and beg end)
+            (delete-region beg end)
+            (goto-char beg))
 
-    (insert
-     (format "[[cite:&%s][%s]]" key
-             (pcase style
-               ('apa (bibtex-completion-apa-format-reference key))
-               (_ (bibtex-completion-chicago-format-reference key style)))))))
+          (insert
+           (format "[[cite:&%s][%s]]" key
+                   (or region-text
+                       (pcase style
+                         ('apa (bibtex-completion-apa-format-reference key))
+                         (_ (bibtex-completion-chicago-format-reference key style))))))))
+    (deactivate-mark)))
 
 (provide 'bibtex-completion-ok)
 
