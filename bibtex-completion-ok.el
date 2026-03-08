@@ -4,7 +4,7 @@
 ;;
 ;; Author: Taro Sato <okomestudio@gmail.com>
 ;; URL: https://github.com/okomestudio/bibtex-completion-ok
-;; Version: 0.3.2
+;; Version: 0.3.3
 ;; Keywords: convenience
 ;; Package-Requires: ((emacs "30.1") (bibtex-completion "1.0.0") (dash "2.20.0") (mulex "0.1.3") (s "1.13.1"))
 ;;
@@ -667,14 +667,16 @@ The default is the Chicago Bibliography style."
                   (_ 'bibliography)))
                (key
                 (if-let*
-                    ((link (and (org-in-regexp org-link-any-re)
-                                (substring-no-properties (match-string 0))))
-                     (beg (match-beginning 0))
-                     (end (match-end 0))
+                    ((lnk (and (org-in-regexp org-link-any-re)
+                               (substring-no-properties (match-string 0))))
+                     (lnk-beg (match-beginning 0))
+                     (lnk-end (match-end 0))
                      (key (and (string-match "^\\[\\[cite:&\\([^]]*\\)\\].*"
-                                             link)
-                               (match-string 1 link))))
-                    key
+                                             lnk)
+                               (match-string 1 lnk))))
+                    (progn
+                      (setq beg lnk-beg end lnk-end)
+                      key)
                   (org-ref-read-key))))
           ;; Delete the insert region before replacement.
           (when (and beg end)
