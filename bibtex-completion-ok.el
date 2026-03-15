@@ -4,7 +4,7 @@
 ;;
 ;; Author: Taro Sato <okomestudio@gmail.com>
 ;; URL: https://github.com/okomestudio/bibtex-completion-ok
-;; Version: 0.3.3
+;; Version: 0.3.4
 ;; Keywords: convenience
 ;; Package-Requires: ((emacs "30.1") (bibtex-completion "1.0.0") (dash "2.20.0") (mulex "0.1.3") (s "1.13.1"))
 ;;
@@ -73,6 +73,15 @@ associated field names as symbols."
               has-not))))
     (when (and result (eval `(and ,@result)))
       (car (last (mapc #'eval body))))))
+
+(defmacro bibtex-completion-chicago--section-publisher ()
+  "Common publisher information section."
+  '(bibtex-completion-when-entry entry '(:has publisher)
+     (concat
+      (bibtex-completion-when-entry entry '(:has location)
+        (mulex-case ('ja "")
+                    (_ (concat "${location}" colon))))
+      "${publisher}")))
 
 (defmacro bibtex-completion-chicago-format--pcase (variant &rest cases)
   "The wrapper for pcase of CASES given VARIANT.
@@ -172,9 +181,8 @@ This wrapper makes a few functions available via let-bindings."
                         (_ "trans. ${translator}"))))))
        (space)
        (format paren
-               (concat (mulex-case ('ja "")
-                                   (_ (concat "${location}" colon)))
-                       "${publisher}" comma "${year}"))))
+               (concat (bibtex-completion-chicago--section-publisher)
+                       comma "${year}"))))
      (_
       (concat
        "${author-or-editor/i}"
@@ -190,9 +198,8 @@ This wrapper makes a few functions available via let-bindings."
          (concat (mulex-case ('ja "${translator}訳")
                              (_ "Translated by ${translator}"))
                  period))
-       (mulex-case ('ja "")
-                   (_ (concat "${location}" colon)))
-       "${publisher}" comma "${year}"))))
+       (bibtex-completion-chicago--section-publisher)
+       comma "${year}"))))
 
 (defmacro bibtex-completion-chicago-format--mvbook ()
   "Format the multi-volume book reference."
@@ -221,9 +228,8 @@ This wrapper makes a few functions available via let-bindings."
                       (_ "vol. ${volume}")))))
        (space)
        (format paren
-               (concat (mulex-case ('ja "")
-                                   (_ (concat "${location}" colon)))
-                       "${publisher}" comma "${year}"))))
+               (concat (bibtex-completion-chicago--section-publisher)
+                       comma "${year}"))))
      (_
       (concat
        "${author-or-editor/i}" (period)
@@ -239,9 +245,8 @@ This wrapper makes a few functions available via let-bindings."
          (concat (mulex-case ('ja "${translator}訳")
                              (_ "Translated by ${translator}"))
                  period))
-       (mulex-case ('ja "")
-                   (_ (concat "${location}" colon)))
-       "${publisher}" comma "${year}"))))
+       (bibtex-completion-chicago--section-publisher)
+       comma "${year}"))))
 
 (defmacro bibtex-completion-chicago-format--incollection ()
   "Format the section in a title reference."
@@ -254,26 +259,38 @@ This wrapper makes a few functions available via let-bindings."
        "${author}" comma
        (format dq "${title}") comma
        (mulex-case
-        ('ja (concat "${editor}編" (format it "${title}") "所収"))
-        (_ (concat "in " (format it "${title}") comma "ed. ${editor}")))
+        ('ja (concat (format it "${title}")
+                     (bibtex-completion-when-entry entry '(:has editor)
+                       comma "${editor}編")))
+        (_ (concat "in " (format it "${title}")
+                   (bibtex-completion-when-entry entry '(:has editor)
+                     comma "ed. ${editor}"))))
        (space)
-       (format paren (concat "${location}" colon "${publisher}" comma
-                             "${year}"))))
+       (format paren (bibtex-completion-chicago--section-publisher) comma "${year}")))
      (_
       (concat
        "${author/i}" period
        (format dq "${title}") period
        (mulex-case
-        ('ja (concat "${editor}編" (format it "${title}") "所収"))
+        ('ja (s-join
+              space
+              (-non-nil
+               (list (bibtex-completion-when-entry entry '(:has editor)
+                       "${editor}編")
+                     (format it "${booktitle}")
+                     (bibtex-completion-when-entry entry '(:has pages)
+                       comma "${pages}")))))
         (_ (s-join
             comma
             (-non-nil
-             (list (concat "In " (format it "${title}"))
-                   "edited by ${editor}"
+             (list (concat "In " (format it "${booktitle}"))
+                   (bibtex-completion-when-entry entry '(:has editor)
+                     "edited by ${editor}")
                    (bibtex-completion-when-entry entry '(:has pages)
                      "${pages}"))))))
        period
-       "${location}" colon "${publisher}" comma "${year}"))))
+       (bibtex-completion-chicago--section-publisher) comma
+       "${year}"))))
 
 (defmacro bibtex-completion-chicago-format--online ()
   "Fromat the online reference.
@@ -499,18 +516,19 @@ returned. VARIANT and LANG are passed to the formatter function."
           (if-let* ((value (get-value field)))
               (pcase field
                 ("author" (format-names value .lang nil .variant))
-                ("editor" (format-names value .lang nil .variant))
-                ("translator" (format-names value .lang nil .variant))
-                ("title" value)
-                ("journal" value)
                 ("booktitle" value)
-                ("pages" (s-join "–" (s-split "[^0-9]+" value t)))
-                ("doi" (s-concat " https://doi.org/" value))
-                ("year" value)
                 ("date" (let ((dt (parse-time-string value)))
                           (mulex-date-format (decoded-time-year dt)
                                              (decoded-time-month dt)
                                              (decoded-time-day dt))))
+                ("doi" (s-concat " https://doi.org/" value))
+                ("editor" (format-names value .lang nil .variant))
+                ("journal" value)
+                ("location" (string-trim (car (string-split value ","))))
+                ("title" value)
+                ("translator" (format-names value .lang nil .variant))
+                ("pages" (s-join "–" (s-split "[^0-9]+" value t)))
+                ("year" value)
                 (_ value))
             ;; Handle common derived fields:
             (pcase field
@@ -694,6 +712,7 @@ The default is the Chicago Bibliography style."
 (provide 'bibtex-completion-ok)
 
 ;; Local Variables:
-;; nameless-aliases: (("c" . "bibtex-completion-chicago"))
+;; nameless-aliases: (("c" . "bibtex-completion-chicago")
+;;                    ("bc" . "bibtex-completion"))
 ;; End:
 ;;; bibtex-completion-ok.el ends here
